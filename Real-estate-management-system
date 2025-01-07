@@ -1,0 +1,119 @@
+-- Drop existing tables if they already exist
+BEGIN
+    EXECUTE IMMEDIATE 'DROP TABLE Transactions CASCADE CONSTRAINTS';
+    EXECUTE IMMEDIATE 'DROP TABLE Agents CASCADE CONSTRAINTS';
+    EXECUTE IMMEDIATE 'DROP TABLE Clients CASCADE CONSTRAINTS';
+    EXECUTE IMMEDIATE 'DROP TABLE Properties CASCADE CONSTRAINTS';
+EXCEPTION
+    WHEN OTHERS THEN
+        NULL; -- Ignore errors if tables do not exist
+END;
+/
+
+-- Create Properties table
+CREATE TABLE Properties (
+    PropertyID INT PRIMARY KEY,
+    Location VARCHAR(100),
+    Price DECIMAL(10, 2),
+    IsAvailable CHAR(1) DEFAULT 'Y' -- Use 'Y' for available, 'N' for not available
+);
+
+-- Create Clients table
+CREATE TABLE Clients (
+    ClientID INT PRIMARY KEY,
+    Name VARCHAR(100),
+    Contact VARCHAR(15)
+);
+
+-- Create Agents table
+CREATE TABLE Agents (
+    AgentID INT PRIMARY KEY,
+    Name VARCHAR(100),
+    CommissionRate DECIMAL(5, 2) -- e.g., 0.05 for 5%
+);
+
+-- Create Transactions table
+CREATE TABLE Transactions (
+    TransactionID INT PRIMARY KEY,
+    PropertyID INT,
+    ClientID INT,
+    AgentID INT,
+    SalePrice DECIMAL(10, 2),
+    SaleDate DATE,
+    FOREIGN KEY (PropertyID) REFERENCES Properties(PropertyID),
+    FOREIGN KEY (ClientID) REFERENCES Clients(ClientID),
+    FOREIGN KEY (AgentID) REFERENCES Agents(AgentID)
+);
+
+-- Insert sample data into Properties
+MERGE INTO Properties p
+USING (SELECT 1 AS PropertyID, 'Mumbai' AS Location, 750000 AS Price, 'Y' AS IsAvailable FROM DUAL UNION ALL
+       SELECT 2, 'Delhi', 1200000, 'Y' FROM DUAL) src
+ON (p.PropertyID = src.PropertyID)
+WHEN NOT MATCHED THEN
+    INSERT (PropertyID, Location, Price, IsAvailable)
+    VALUES (src.PropertyID, src.Location, src.Price, src.IsAvailable);
+
+-- Insert sample data into Clients
+MERGE INTO Clients c
+USING (SELECT 1 AS ClientID, 'John Doe' AS Name, '9876543210' AS Contact FROM DUAL UNION ALL
+       SELECT 2, 'Jane Smith', '9123456789' FROM DUAL) src
+ON (c.ClientID = src.ClientID)
+WHEN NOT MATCHED THEN
+    INSERT (ClientID, Name, Contact)
+    VALUES (src.ClientID, src.Name, src.Contact);
+
+-- Insert sample data into Agents
+MERGE INTO Agents a
+USING (SELECT 1 AS AgentID, 'Agent A' AS Name, 0.05 AS CommissionRate FROM DUAL UNION ALL
+       SELECT 2, 'Agent B', 0.03 FROM DUAL) src
+ON (a.AgentID = src.AgentID)
+WHEN NOT MATCHED THEN
+    INSERT (AgentID, Name, CommissionRate)
+    VALUES (src.AgentID, src.Name, src.CommissionRate);
+
+-- Create Procedure to calculate agent commission
+CREATE OR REPLACE PROCEDURE CalculateAgentCommission(p_AgentID INT) AS
+    v_TotalCommission DECIMAL(10, 2);
+BEGIN
+    SELECT SUM(SalePrice * (SELECT CommissionRate FROM Agents WHERE AgentID = p_AgentID))
+    INTO v_TotalCommission
+    FROM Transactions
+    WHERE AgentID = p_AgentID;
+
+    DBMS_OUTPUT.PUT_LINE('Total Commission for Agent ID ' || p_AgentID || ': ' || v_TotalCommission);
+END;
+/
+
+-- Create Trigger to update property availability
+CREATE OR REPLACE TRIGGER UpdatePropertyAvailability
+AFTER INSERT ON Transactions
+FOR EACH ROW
+BEGIN
+    UPDATE Properties
+    SET IsAvailable = 'N'
+    WHERE PropertyID = :NEW.PropertyID;
+END;
+/
+
+-- Test the Procedure
+BEGIN
+    CalculateAgentCommission(1);
+END;
+/
+
+-- Query to search properties
+SELECT * 
+FROM Properties
+WHERE Location = 'Mumbai'
+  AND Price BETWEEN 500000 AND 1000000
+  AND IsAvailable = 'Y';
+
+
+
+-- Query to search properties with filters
+SELECT * 
+FROM Properties
+WHERE Location = 'Mumbai'           -- Filter by location
+  AND Price BETWEEN 500000 AND 1000000 -- Filter by price range
+  AND IsAvailable = 'Y';            -- Check if the property is available
